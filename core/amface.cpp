@@ -12,10 +12,10 @@ using namespace face;
 AMFace::AMFace(const string & model_dir)
 {
 	// Load the Net and Model.
-	// net = make_shared<caffe::Net<float>>(model_dir + "/AMFACE_r34.prototxt", caffe::TEST);
-	// net->CopyTrainedLayersFrom(model_dir + "/AMFACE_r34.caffemodel");
-	net = make_shared<caffe::Net<float>>(model_dir + "/CENTER.prototxt", caffe::TEST);
-	net->CopyTrainedLayersFrom(model_dir + "/CENTER.caffemodel");
+	net = make_shared<caffe::Net<float>>(model_dir + "/AMFACE_r34.prototxt", caffe::TEST);
+	net->CopyTrainedLayersFrom(model_dir + "/AMFACE_r34.caffemodel");
+	// net = make_shared<caffe::Net<float>>(model_dir + "/CENTER.prototxt", caffe::TEST);
+	// net->CopyTrainedLayersFrom(model_dir + "/CENTER.caffemodel");
 	caffe::Blob<float>* input_layer = net->input_blobs()[0];
 	input_size.height = input_layer->shape(2);
 	input_size.width = input_layer->shape(3);
