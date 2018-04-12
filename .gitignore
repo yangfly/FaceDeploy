@@ -32,4 +32,6 @@
 *.app
 
 # exclude dirs
+.vscore
 models
+build

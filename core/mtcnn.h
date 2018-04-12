@@ -1,92 +1,102 @@
-#ifndef MTCNN_H
-#define MTCNN_H
-//caffe
+#ifndef FACE_MTCNN_HPP_
+#define FACE_MTCNN_HPP_
+
+// caffe
 #include <caffe/caffe.hpp>
-#include <caffe/layers/memory_data_layer.hpp>
-
-//C++
-#include <iostream>
-#include <string>
-#include <vector>
-#include <fstream>
-//opencv
+// OpenCV
 #include <opencv2/opencv.hpp>
-//boost
-#include "boost/make_shared.hpp"
-#include <sstream>
+// std
+#include <memory>
 
-//#define CPU_ONLY
-#define INTER_FAST
-using namespace caffe;
+#include "core/common.h"
+#include "core/config.h"
 
 namespace face
 {
-typedef struct FaceRect
+
+// Only do normalization once before any image processing to save time.
+/// #define NORM_FARST
+
+/// @brief face regression
+using Reg = BBox;
+
+/// @brief face proposal
+struct Proposal : public FaceInfo
 {
-	float x1;
-	float y1;
-	float x2;
-	float y2;
-	float score; /**< Larger score should mean higher confidence. */
-} FaceRect;
+	Reg reg;	// face regression
+	Proposal(BBox&& bbox, float score, Reg&& reg) :
+    FaceInfo(std::move(bbox), score), reg(std::move(reg)) {}
+	Proposal(BBox&& bbox, float score, FPoints&& fpts, Reg&& reg) :
+    FaceInfo(std::move(bbox), score, std::move(fpts)), reg(std::move(reg)) {}
+};
 
-typedef struct FacePts
+class Mtcnn
 {
-	float x[5], y[5];
-} FacePts;
+public:
+	/// @brief Constructor.
+	Mtcnn(const std::string & model_dir);
+	/// @brief Detect faces from images
+	std::vector<FaceInfo> Detect(const cv::Mat & sample, bool precise_landmark);
+	/// @brief Align image with facial points, with cp2tform and cv::warpAffine
+	/// @param width: 96 or 112
+	cv::Mat Align(const cv::Mat & sample, const FPoints & fpts, int width = 96);
 
-typedef struct FaceInfo
-{
-	FaceRect bbox;
-	cv::Vec4f regression;
-	FacePts facePts;
-	double roll;
-	double pitch;
-	double yaw;
-} FaceInfo;
+private:
+  enum NMS_TYPE {
+		IoM,	// Intersection over Union
+		IoU		// Intersection over Minimum
+	};
 
-class MTCNN
-{
-  public:
-	MTCNN(const string &proto_model_dir, const int gpuID = 0);
-	void Detect(const cv::Mat &img, std::vector<FaceInfo> &faceInfo, int minSize, double *threshold, double factor);
-	cv::Mat Align(const cv::Mat &img, const FacePts facePts);
+	// networks
+	std::shared_ptr<caffe::Net<float>> Pnet;
+	std::shared_ptr<caffe::Net<float>> Rnet;
+	std::shared_ptr<caffe::Net<float>> Onet;
+	#ifdef MTCNN_PRECISE_LANDMARK
+	  std::shared_ptr<caffe::Net<float>> Lnet;
+  #endif // MTCNN_PRECISE_LANDMARK
 
-  private:
-	bool CvMatToDatumSignalChannel(const cv::Mat &cv_mat, Datum *datum);
-	void Preprocess(const cv::Mat &img,
-					std::vector<cv::Mat> *input_channels);
-	void WrapInputLayer(std::vector<cv::Mat> *input_channels, Blob<float> *input_layer,
-						const int height, const int width);
-	void SetMean();
-	void GenerateBoundingBox(Blob<float> *confidence, Blob<float> *reg,
-							 float scale, float thresh, int image_width, int image_height);
-	void ClassifyFace(const std::vector<FaceInfo> &regressed_rects, cv::Mat &sample_single,
-					  boost::shared_ptr<Net<float>> &net, double thresh, char netName);
-	void ClassifyFace_MulImage(const std::vector<FaceInfo> &regressed_rects, cv::Mat &sample_single, boost::shared_ptr<Net<float>> &net, double thresh, char netName);
-	std::vector<FaceInfo> NonMaximumSuppression(std::vector<FaceInfo> &bboxes, float thresh, char methodType);
-	void Bbox2Square(std::vector<FaceInfo> &bboxes);
-	void Padding(int img_w, int img_h);
-	std::vector<FaceInfo> BoxRegress(std::vector<FaceInfo> &faceInfo_, int stage);
-	void RegressPoint(const std::vector<FaceInfo> &faceInfo);
+	// reference standard facial points
+	FPoints ref_96_112;
+	FPoints ref_112_112;
 
-  private:
-	boost::shared_ptr<Net<float>> PNet_;
-	boost::shared_ptr<Net<float>> RNet_;
-	boost::shared_ptr<Net<float>> ONet_;
+  /// @brief Set batch size of network.
+	void SetBatchSize(std::shared_ptr<caffe::Net<float> > net, const int batch_size);
+	/// @brief Warp whole input layer into cv::Mat channels.
+	std::vector<std::vector<cv::Mat> > WarpInputLayer(std::shared_ptr<caffe::Net<float> > net);
+	/// @brief Create scale pyramid: down order
+	std::vector<float> ScalePyramid(const int min_len);
+	/// @brief Get bboxes from maps of confidences and regressions.
+	std::vector<Proposal> GetCandidates(const float scale,
+		const caffe::Blob<float>* regs, const caffe::Blob<float>* scores);
+	/// @brief Non Maximum Supression with type 'IoU' or 'IoM'.
+	std::vector<Proposal> NonMaximumSuppression(std::vector<Proposal>& pros,
+		const float threshold, const NMS_TYPE type);
+	/// @brief Refine bounding box with regression.
+	void BoxRegression(std::vector<Proposal>& pros);
+	/// @brief Convert bbox from float bbox to square.
+	void Square(std::vector<BBox> & bboxes);
+	void Square(BBox & bbox);
+	/// @brief Crop proposals with padding 0.
+	cv::Mat CropPadding(const cv::Mat& sample, const BBox& bbox);
+	/// @brief Ensure faceInfo inside image.
+	// void EnsureInside(const cv::Mat& sample, std::vector<FaceInfo>& infos);
 
-	// x1,y1,x2,t2 and score
-	std::vector<FaceInfo> condidate_rects_;
-	std::vector<FaceInfo> total_boxes_;
-	std::vector<FaceInfo> regressed_rects_;
-	std::vector<FaceInfo> regressed_pading_;
+	/// @brief Stage 1: Pnet get proposal bounding boxes
+	std::vector<BBox> ProposalNetwork(const cv::Mat& sample);
+	/// @brief Stage 2: Rnet refine and reject proposals
+	std::vector<BBox> RefineNetwork(const cv::Mat& sample, std::vector<BBox>& bboxes);
+	/// @brief Stage 3: Onet refine and reject proposals and regress facial landmarks.
+	std::vector<FaceInfo> OutputNetwork(const cv::Mat& sample, std::vector<BBox>& bboxes);
+	/// @brief Stage 4: Lnet refine facial landmarks
+	#ifdef MTCNN_PRECISE_LANDMARK
+		void LandmarkNetwork(const cv::Mat& sample, std::vector<FaceInfo>& infos);
+	#endif // MTCNN_PRECISE_LANDMARK
 
-	std::vector<cv::Mat> crop_img_;
-	int curr_feature_map_w_;
-	int curr_feature_map_h_;
-	int num_channels_;
+	/// @brief cp2tform matlab export to c++
+	/// @param type: 'similarity' or 'nonreflective similarity'
+	cv::Mat cp2tform(const FPoints & src, const FPoints & dst, const char * type="similarity");
+};	// class MTCNN
 
-	std::vector<cv::Point2f> ref_pts;
-}; // class MTCNN
 } // namespace face
-#endif // MTCNN_H
+
+#endif // FACE_MTCNN_HPP_
