@@ -36,3 +36,5 @@
 models
 build
 mxnet
+out
+Thumbs.db

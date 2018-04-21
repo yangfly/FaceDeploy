@@ -260,12 +260,14 @@ Mat Mtcnn::CropPadding(const Mat& sample, const BBox& bbox)
 {
   Rect img_rect(0, 0, sample.cols, sample.rows);
   Rect crop_rect(Point2f(bbox.x1, bbox.y1), Point2f(bbox.x2, bbox.y2));
+  Mat crop(crop_rect.size(), CV_32FC3, Scalar(0.0));
   Rect inter_on_sample = crop_rect & img_rect;
   // shifting inter from image CS (coordinate system) to crop CS.
-  Rect inter_on_crop = inter_on_sample - crop_rect.tl();
-
-  Mat crop(crop_rect.size(), CV_32FC3, Scalar(0.0));
-  sample(inter_on_sample).copyTo(crop(inter_on_crop));
+  if (inter_on_sample.width * inter_on_sample.height)
+  {
+    Rect inter_on_crop = inter_on_sample - crop_rect.tl();
+    sample(inter_on_sample).copyTo(crop(inter_on_crop));
+  }
 
   return move(crop);
 }
