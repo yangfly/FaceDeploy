@@ -24,11 +24,11 @@ Mtcnn::Mtcnn(const string & model_dir)
 
   // init reference facial points
   ref_96_112.reserve(5);
-  ref_96_112.emplace_back(30.2946, 51.6963);
-	ref_96_112.emplace_back(65.5318, 51.5014);
-	ref_96_112.emplace_back(48.0252, 71.7366);
-	ref_96_112.emplace_back(33.5493, 92.3655);
-	ref_96_112.emplace_back(62.7299, 92.2041);
+  ref_96_112.emplace_back(29.2946, 50.6963); // as c++ or python index start from 0
+  ref_96_112.emplace_back(64.5318, 50.5014); // w.r.t matlab index start from 1
+  ref_96_112.emplace_back(47.0252, 70.7366); // this will result a minus one in landmarks
+  ref_96_112.emplace_back(32.5493, 91.3655);
+  ref_96_112.emplace_back(61.7299, 91.2041);
 
   ref_112_112.reserve(5);
   for (const auto & pt : ref_96_112)
@@ -63,6 +63,18 @@ vector<FaceInfo> Mtcnn::Detect(const Mat & sample, bool precise_landmark)
     if (precise_landmark)
 	    LandmarkNetwork(normed_sample, infos);
   #endif // MTCNN_PRECISE_LANDMARK
+
+  // matlab CS to C++ CS
+  for (auto & info : infos)
+  {
+    info.bbox.x1 -= 1;
+    info.bbox.y1 -= 1;
+    for (auto & fpt : info.fpts)
+    {
+      fpt.x -= 1;
+      fpt.y -= 1;
+    }
+  }
     
   return move(infos);
 }
@@ -136,10 +148,10 @@ vector<Proposal> Mtcnn::GetCandidates(const float scale, const caffe::Blob<float
       {
         // bounding box
         BBox bbox(
-          j * stride / scale,	// x1
-          i * stride / scale,	// y1
-          (j * stride + cell_size - 1) / scale + 1,	// x2
-          (i * stride + cell_size - 1) / scale + 1);	// y2
+          (int)((j * stride + 1) / scale),	    // x1
+          (int)((i * stride + 1) / scale),	    // y1
+          (int)((j * stride + cell_size) / scale),	    // x2
+          (int)((i * stride + cell_size) / scale));	// y2
         // bbox regression
         Reg reg(
           regs->data_at(0, 0, i, j),	// reg_x1
@@ -209,11 +221,11 @@ vector<Proposal> Mtcnn::NonMaximumSuppression(vector<Proposal>& pros,
 void Mtcnn::BoxRegression(vector<Proposal>& pros)
 {
   for (auto& pro : pros) {
-    float width = pro.bbox.x2 - pro.bbox.x1;
-    float height = pro.bbox.y2 - pro.bbox.y1;
+    float width = pro.bbox.x2 - pro.bbox.x1 + 1;
+    float height = pro.bbox.y2 - pro.bbox.y1 + 1;
     pro.bbox.x1 += pro.reg.x1 * width;	// x1
     pro.bbox.y1 += pro.reg.y1 * height;	// y1
-    pro.bbox.x2 += pro.reg.x2 * height;	// x2
+    pro.bbox.x2 += pro.reg.x2 * width;	// x2
     pro.bbox.y2 += pro.reg.y2 * height;	// y2
   }
 }
@@ -223,43 +235,23 @@ void Mtcnn::Square(vector<BBox> & bboxes) {
     Square(bbox);
 }
 
-void Mtcnn::Square(BBox & bbox) {
-  float x1 = floor(bbox.x1);
-  float y1 = floor(bbox.y1);
-  float x2 = ceil(bbox.x2);
-  float y2 = ceil(bbox.y2);
-  int diff = static_cast<int>((x2 - x1) - (y2 - y1));
-  if (diff > 0) {	// width > height
-    y1 -= diff / 2;
-    y2 += diff / 2;
-    if (diff % 2 != 0) {
-      if ((bbox.y1 - y1) < (y2 - bbox.y2))
-        y1 -= 1;
-      else
-        y2 += 1;
-    }
-  }
-  else if (diff < 0) {	// height < width
-    diff = -diff;
-    x1 -= diff / 2;
-    x2 += diff / 2;
-    if (diff % 2 != 0) {
-      if ((bbox.x1 - x1) < (x2 - bbox.x2))
-        x1 -= 1;
-      else
-        x2 += 1;
-    }
-  }
-  bbox.x1 = x1;
-  bbox.y1 = y1;
-  bbox.x2 = x2;
-  bbox.y2 = y2;
+void Mtcnn::Square(BBox & bbox)
+{
+  float w = bbox.x2 - bbox.x1;
+  float h = bbox.y2 - bbox.y1;
+  float maxl = max(w, h);
+  bbox.x1 += (w - maxl) * 0.5;
+  bbox.y1 += (h - maxl) * 0.5;
+  bbox.x2 = (int)(bbox.x1 + maxl);
+  bbox.y2 = (int)(bbox.y1 + maxl);
+  bbox.x1 = (int)(bbox.x1);
+  bbox.y1 = (int)(bbox.y1);
 }
 
 Mat Mtcnn::CropPadding(const Mat& sample, const BBox& bbox)
 {
   Rect img_rect(0, 0, sample.cols, sample.rows);
-  Rect crop_rect(Point2f(bbox.x1, bbox.y1), Point2f(bbox.x2, bbox.y2));
+  Rect crop_rect(Point2f(bbox.x1-1, bbox.y1-1), Point2f(bbox.x2, bbox.y2));
   Mat crop(crop_rect.size(), CV_32FC3, Scalar(0.0));
   Rect inter_on_sample = crop_rect & img_rect;
   // shifting inter from image CS (coordinate system) to crop CS.
@@ -267,8 +259,8 @@ Mat Mtcnn::CropPadding(const Mat& sample, const BBox& bbox)
   {
     Rect inter_on_crop = inter_on_sample - crop_rect.tl();
     sample(inter_on_sample).copyTo(crop(inter_on_crop));
-  }
-
+ }
+  
   return move(crop);
 }
 
@@ -299,9 +291,10 @@ vector<BBox> Mtcnn::ProposalNetwork(const Mat & sample)
 
     const vector<caffe::Blob<float>*> out = Pnet->Forward();
     vector<Proposal> pros = GetCandidates(scale, out[1], out[0]);
-    
+ 
     // intra scale nms
     pros = NonMaximumSuppression(pros, 0.5f, IoU);
+
     if (!pros.empty()) {
       total_pros.insert(total_pros.end(), pros.begin(), pros.end());
     }
@@ -392,7 +385,7 @@ vector<FaceInfo> Mtcnn::OutputNetwork(const Mat & sample, vector<BBox> & bboxes)
   caffe::Blob<float>* scores = out[2];
 
   vector<Proposal> pros;
-  for (int i = 0; i < num; ++i)
+  for (int i = 0; i < num; i++)
   {
     BBox& bbox = bboxes[i];
     if (scores->data_at(i, 1, 0, 0) >= MTCNN_ONET_THRESHOLD) {
@@ -404,18 +397,18 @@ vector<FaceInfo> Mtcnn::OutputNetwork(const Mat & sample, vector<BBox> & bboxes)
       float score = scores->data_at(i, 1, 0, 0);
       // facial landmarks
       FPoints fpt;
-      float width = bbox.x2 - bbox.x1;
-      float height = bbox.y2 - bbox.y1;
+      float width = bbox.x2 - bbox.x1 + 1;
+      float height = bbox.y2 - bbox.y1 + 1;
       for (int j = 0; j < 5; j++)
         fpt.emplace_back(
-        fpts->data_at(i, j, 0, 0) * width + bbox.x1,
-        fpts->data_at(i, j+5, 0, 0) * height + bbox.y1);
+        fpts->data_at(i, j, 0, 0) * width + bbox.x1 - 1,
+        fpts->data_at(i, j+5, 0, 0) * height + bbox.y1 - 1);
       pros.emplace_back(move(bbox), score, move(fpt), move(reg));
     }
   }
 
-  pros = NonMaximumSuppression(pros, 0.7f, IoM);
   BoxRegression(pros);
+  pros = NonMaximumSuppression(pros, 0.7f, IoM);
 
   for (auto & pro : pros)
     infos.emplace_back(move(pro.bbox), pro.score, move(pro.fpts));
@@ -433,23 +426,23 @@ void Mtcnn::LandmarkNetwork(const Mat & sample, vector<FaceInfo>& infos)
   SetBatchSize(Lnet, num);
   Rect img_rect(0, 0, sample.cols, sample.rows);
   vector<vector<Mat>> input_channels = WarpInputLayer(Lnet);
-  Mat patch_sizes(num, 5, CV_32S);
+  vector<int> patch_sizes;
   for (int i = 0; i < num; ++i)
   {
     FaceInfo & info = infos[i];
     float patchw = std::max(info.bbox.x2 - info.bbox.x1,
-      info.bbox.y2 - info.bbox.y1);
-    float patchs = patchw * 0.25f;
+      info.bbox.y2 - info.bbox.y1) + 1;
+    int patchs = patchw * 0.25f;
+    if (patchs % 2 == 1)
+      patchs += 1;
+    patch_sizes.push_back(patchs);
     for (int j = 0; j < 5; ++j)
     {
       BBox patch;
-      patch.x1 = info.fpts[j].x - patchs * 0.5f;
-      patch.y1 = info.fpts[j].y - patchs * 0.5f;
-      patch.x2 = info.fpts[j].x + patchs * 0.5f;
-      patch.y2 = info.fpts[j].y + patchs * 0.5f;
-      Square(patch);
-      patch_sizes.at<int>(i, j) = patch.x2 - patch.x1;
-      
+      patch.x1 = (int)(info.fpts[j].x - patchs * 0.5f);
+      patch.y1 = (int)(info.fpts[j].y - patchs * 0.5f);
+      patch.x2 = patch.x1 + patchs;
+      patch.y2 = patch.y1 + patchs;
       Mat crop = CropPadding(sample, patch);
       resize(crop, crop, Size(24, 24));
       #ifndef NORM_FARST
@@ -474,7 +467,7 @@ void Mtcnn::LandmarkNetwork(const Mat & sample, vector<FaceInfo>& infos)
     // for every face
     for (int i = 0; i < num; ++i)
     {
-      int patch_size = patch_sizes.at<int>(i,j);
+      int patch_size = patch_sizes[i];
       float off_x = offs->data_at(i, 0, 0, 0) - 0.5;
       float off_y = offs->data_at(i, 1, 0, 0) - 0.5;
       // Dot not make large movement with relative offset > 0.35

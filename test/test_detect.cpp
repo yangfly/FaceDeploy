@@ -36,6 +36,9 @@ int main()
     rectangle(image, Rect(info.bbox.x1, info.bbox.y1, info.bbox.x2 - info.bbox.x1, info.bbox.y2 - info.bbox.y1), Scalar(255, 0, 0), 2);
     for (auto & point : info.fpts)
       circle(image, Point2f(point.x, point.y), 2, Scalar(0, 255, 0), -1);
+    cout << info.bbox.x1 << " " << info.bbox.y1 << " " << info.bbox.x2 << " " << info.bbox.y2 << " " << info.score << endl;
+    cout << info.fpts[0].x << " " << info.fpts[1].x << " " << info.fpts[2].x << " " << info.fpts[3].x << " " << info.fpts[4].x << endl;
+    cout << info.fpts[0].y << " " << info.fpts[1].y << " " << info.fpts[2].y << " " << info.fpts[3].y << " " << info.fpts[4].y << endl;
   }
   imwrite("out/detect/detect.png", image);
 
