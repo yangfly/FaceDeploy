@@ -11,12 +11,12 @@
 // ************ MTCNN *************
 #define MTCNN_MODEL_DIR MODEL_DIR
 #define MTCNN_MIN_SIZE 80
-#define MTCNN_MAX_SIZE 200
+#define MTCNN_MAX_SIZE 300
 #define MTCNN_SCALE_FACTOR 0.65
 #define MTCNN_PNET_THRESHOLD 0.8
 #define MTCNN_RNET_THRESHOLD 0.9
 #define MTCNN_ONET_THRESHOLD 0.9
-//#define MTCNN_PRECISE_LANDMARK
+#define MTCNN_PRECISE_LANDMARK
 
 // ************ AMFACE *************
 #define AMFACE_MODEL_DIR MODEL_DIR

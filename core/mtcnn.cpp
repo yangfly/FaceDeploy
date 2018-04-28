@@ -8,6 +8,13 @@ using namespace std;
 using namespace cv;
 using namespace face;
 
+#include <limits>
+int fix(float f)
+{
+  f *= 1 + numeric_limits<float>::epsilon();
+  return (int)f;
+}
+
 Mtcnn::Mtcnn(const string & model_dir)
 {
   // load models
@@ -35,6 +42,7 @@ Mtcnn::Mtcnn(const string & model_dir)
     ref_112_112.emplace_back(pt.x + 8.f, pt.y);
 }
 
+/* #define DEBUG */
 #include <iostream>
 void imsave(const Mat & sample, const vector<Proposal> & pros, const string & path)
 {
@@ -43,6 +51,28 @@ void imsave(const Mat & sample, const vector<Proposal> & pros, const string & pa
   for (const auto & pro : pros)
     rectangle(img, Rect(pro.bbox.x1, pro.bbox.y1, pro.bbox.x2 - pro.bbox.x1,
       pro.bbox.y2 -  pro.bbox.y1), Scalar(255, 0, 0), 2);
+  imwrite(path, img);
+}
+void imsave(const Mat & sample, const vector<BBox> & bboxes, const string & path)
+{
+  Mat img;
+  sample.copyTo(img);
+  for (const auto & bbox : bboxes)
+    rectangle(img, Rect(bbox.x1, bbox.y1, bbox.x2 - bbox.x1,
+      bbox.y2 - bbox.y1), Scalar(255, 0, 0), 2);
+  imwrite(path, img);
+}
+void imsave(const Mat & sample, const vector<FaceInfo> & infos, const string & path)
+{
+  Mat img;
+  sample.copyTo(img);
+  for (const auto & info : infos) {
+    rectangle(img, Rect(info.bbox.x1, info.bbox.y1, info.bbox.x2 - info.bbox.x1,
+      info.bbox.y2 -  info.bbox.y1), Scalar(255, 0, 0), 2);
+    for (const auto pt : info.fpts)
+      circle(img, cv::Point(fix(pt.x), fix(pt.y)), 2, Scalar(0, 255, 0), -1);
+  }
+
   imwrite(path, img);
 }
 
@@ -56,8 +86,19 @@ vector<FaceInfo> Mtcnn::Detect(const Mat & sample, bool precise_landmark)
   #endif // NORM_FARST	
 
   vector<BBox> bboxes = ProposalNetwork(normed_sample);
+  #ifdef DEBUG
+  imsave(normed_sample, bboxes, "pnet.png");
+  #endif
   bboxes = RefineNetwork(normed_sample, bboxes);
+
+  #ifdef DEBUG
+  imsave(normed_sample, bboxes, "rnet.png");
+  #endif
   vector<FaceInfo> infos = OutputNetwork(normed_sample, bboxes);
+
+  #ifdef DEBUG
+  imsave(normed_sample, infos, "onet.png");
+  #endif
 
   #ifdef MTCNN_PRECISE_LANDMARK
     if (precise_landmark)
@@ -148,10 +189,11 @@ vector<Proposal> Mtcnn::GetCandidates(const float scale, const caffe::Blob<float
       {
         // bounding box
         BBox bbox(
-          (int)((j * stride + 1) / scale),	    // x1
-          (int)((i * stride + 1) / scale),	    // y1
-          (int)((j * stride + cell_size) / scale),	    // x2
-          (int)((i * stride + cell_size) / scale));	// y2
+          fix((j * stride + 1) / scale),	    // x1
+          fix((i * stride + 1) / scale),	    // y1
+          fix((j * stride + cell_size) / scale),	// x2
+          fix((i * stride + cell_size) / scale));	// y2
+
         // bbox regression
         Reg reg(
           regs->data_at(0, 0, i, j),	// reg_x1
@@ -182,8 +224,8 @@ vector<Proposal> Mtcnn::NonMaximumSuppression(vector<Proposal>& pros,
     // select maximun candidates.
     Proposal max = move(pros[0]);
     pros.erase(pros.begin());
-    float max_area = (max.bbox.x2 - max.bbox.x1)
-      * (max.bbox.y2 - max.bbox.y1);
+    float max_area = (max.bbox.x2 - max.bbox.x1 + 1)
+      * (max.bbox.y2 - max.bbox.y1 + 1);
     // filter out overlapped candidates in the rest.
     int idx = 0;
     while (idx < pros.size()) {
@@ -193,13 +235,13 @@ vector<Proposal> Mtcnn::NonMaximumSuppression(vector<Proposal>& pros,
       float x2 = std::min(max.bbox.x2, pros[idx].bbox.x2);
       float y2 = std::min(max.bbox.y2, pros[idx].bbox.y2);
       float overlap = 0;
-      if (x1 < x2 && y1 < y2)
+      if (x1 <= x2 && y1 <= y2)
       {
-        float inter = (x2 - x1) * (y2 - y1);
+        float inter = (x2 - x1 + 1) * (y2 - y1 + 1);
         // computer denominator.
         float outer;
-        float area = (pros[idx].bbox.x2 - pros[idx].bbox.x1)
-          * (pros[idx].bbox.y2 - pros[idx].bbox.y1);
+        float area = (pros[idx].bbox.x2 - pros[idx].bbox.x1 + 1)
+          * (pros[idx].bbox.y2 - pros[idx].bbox.y1 + 1);
         if (type == IoM)	// Intersection over Minimum
           outer = std::min(max_area, area);
         else	// Intersection over Union
@@ -242,10 +284,10 @@ void Mtcnn::Square(BBox & bbox)
   float maxl = max(w, h);
   bbox.x1 += (w - maxl) * 0.5;
   bbox.y1 += (h - maxl) * 0.5;
-  bbox.x2 = (int)(bbox.x1 + maxl);
-  bbox.y2 = (int)(bbox.y1 + maxl);
-  bbox.x1 = (int)(bbox.x1);
-  bbox.y1 = (int)(bbox.y1);
+  bbox.x2 = fix(bbox.x1 + maxl);
+  bbox.y2 = fix(bbox.y1 + maxl);
+  bbox.x1 = fix(bbox.x1);
+  bbox.y1 = fix(bbox.y1);
 }
 
 Mat Mtcnn::CropPadding(const Mat& sample, const BBox& bbox)
@@ -303,6 +345,14 @@ vector<BBox> Mtcnn::ProposalNetwork(const Mat & sample)
   total_pros = NonMaximumSuppression(total_pros, 0.7f, IoU);
   BoxRegression(total_pros);
 
+  #ifdef DEBUG
+  cout << "pnet: ";
+  for (auto& pro : total_pros)
+    cout << pro.score << " ";
+  cout << endl;
+  #endif
+
+
   vector<BBox> bboxes;
   for (auto& pro : total_pros)
     bboxes.push_back(move(pro.bbox));
@@ -317,6 +367,7 @@ vector<BBox> Mtcnn::RefineNetwork(const Mat & sample, vector<BBox> & bboxes)
 
   size_t num = bboxes.size();
   Square(bboxes);	// convert bbox to square
+
   SetBatchSize(Rnet, num);
   vector<vector<Mat>> input_channels = WarpInputLayer(Rnet);
 
@@ -350,6 +401,13 @@ vector<BBox> Mtcnn::RefineNetwork(const Mat & sample, vector<BBox> & bboxes)
 
   pros = NonMaximumSuppression(pros, 0.7f, IoU);
   BoxRegression(pros);
+
+  #ifdef DEBUG
+  cout << "rnet: ";
+  for (auto& pro : pros)
+    cout << pro.score << " ";
+  cout << endl;
+  #endif
 
   bboxes.clear();
   for (auto& pro : pros)
@@ -410,6 +468,13 @@ vector<FaceInfo> Mtcnn::OutputNetwork(const Mat & sample, vector<BBox> & bboxes)
   BoxRegression(pros);
   pros = NonMaximumSuppression(pros, 0.7f, IoM);
 
+  #ifdef DEBUG
+  cout << "onet: ";
+  for (auto& pro : pros)
+    cout << pro.score << " ";
+  cout << endl;
+  #endif
+
   for (auto & pro : pros)
     infos.emplace_back(move(pro.bbox), pro.score, move(pro.fpts));
 
@@ -439,8 +504,8 @@ void Mtcnn::LandmarkNetwork(const Mat & sample, vector<FaceInfo>& infos)
     for (int j = 0; j < 5; ++j)
     {
       BBox patch;
-      patch.x1 = (int)(info.fpts[j].x - patchs * 0.5f);
-      patch.y1 = (int)(info.fpts[j].y - patchs * 0.5f);
+      patch.x1 = fix(info.fpts[j].x - patchs * 0.5f);
+      patch.y1 = fix(info.fpts[j].y - patchs * 0.5f);
       patch.x2 = patch.x1 + patchs;
       patch.y2 = patch.y1 + patchs;
       Mat crop = CropPadding(sample, patch);
