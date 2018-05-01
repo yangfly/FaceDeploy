@@ -7,4 +7,5 @@ Core and Profile for face project deployment
 - config: change some configures for wild tasks.
 
 ### 2. Face Feature
-- [ ] **Debug**: result different from mxnet
+- [x] **Debug**: result different from mxnet
+- caffe: with normalize layer

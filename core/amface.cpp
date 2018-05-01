@@ -33,10 +33,8 @@ float AMFace::Similar(const Mat & feature1, const Mat & feature2)
 	const float * data1 = feature1.ptr<float>(0);
 	const float * data2 = feature2.ptr<float>(0);
 	CHECK(data1 != data2) << "not same";
-	float norm_a = caffe::caffe_cpu_dot<float>(len, data1, data1);
-	float norm_b = caffe::caffe_cpu_dot<float>(len, data2, data2);
 	float inp_ab = caffe::caffe_cpu_dot<float>(len, data1, data2);
-	return 0.5 + 0.5 * inp_ab / (sqrt(norm_a) * sqrt(norm_b));
+	return 0.5 + 0.5 * inp_ab;
 }
 
 Mat AMFace::Forward(const Mat & face)
@@ -108,6 +106,7 @@ void AMFace::Feed(const Mat & face, int id)
 	/* Normalization: [0,255] -> [-1, 1] */
 	cv::Mat normed;
 	face.convertTo(normed, CV_32FC3, 1.0 / 128.0, -127.5 / 128.0);
+    cvtColor(normed, normed, COLOR_BGR2RGB);
 	cv::split(normed, input_channels);
 }
 
@@ -118,3 +117,4 @@ Mat AMFace::ToMat(const caffe::Blob<float> * pBlob)
 	const float* data = pBlob->cpu_data();
 	return move(Mat(num, len, CV_32FC1, const_cast<float*>(data)).clone());
 }
+

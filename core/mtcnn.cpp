@@ -50,7 +50,7 @@ void imsave(const Mat & sample, const vector<Proposal> & pros, const string & pa
   sample.copyTo(img);
   for (const auto & pro : pros)
     rectangle(img, Rect(pro.bbox.x1, pro.bbox.y1, pro.bbox.x2 - pro.bbox.x1,
-      pro.bbox.y2 -  pro.bbox.y1), Scalar(255, 0, 0), 2);
+      pro.bbox.y2 - pro.bbox.y1), Scalar(255, 0, 0), 2);
   imwrite(path, img);
 }
 void imsave(const Mat & sample, const vector<BBox> & bboxes, const string & path)
@@ -68,7 +68,7 @@ void imsave(const Mat & sample, const vector<FaceInfo> & infos, const string & p
   sample.copyTo(img);
   for (const auto & info : infos) {
     rectangle(img, Rect(info.bbox.x1, info.bbox.y1, info.bbox.x2 - info.bbox.x1,
-      info.bbox.y2 -  info.bbox.y1), Scalar(255, 0, 0), 2);
+      info.bbox.y2 - info.bbox.y1), Scalar(255, 0, 0), 2);
     for (const auto pt : info.fpts)
       circle(img, cv::Point(fix(pt.x), fix(pt.y)), 2, Scalar(0, 255, 0), -1);
   }
